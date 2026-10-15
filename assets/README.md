@@ -48,6 +48,17 @@ python tools/make_assets.py
 Скрипт создаст `icon.png`, `presplash.png` и **настоящий `presplash.jpg`**
 (через Pillow, с проверкой сигнатуры `ff d8`).
 
+**Локальный запуск не обязателен.** GitHub Actions вызывает
+`python tools/make_assets.py --only-missing` сам, перед сборкой, и следующим
+шагом проверяет, что `presplash.jpg` начинается с `ff d8`. Уже существующие
+файлы не перезаписываются — если вы закоммитили свой `icon.png`, он останется.
+
+Локально полезно прогнать, чтобы посмотреть картинки до сборки:
+
+```bash
+python tools/make_assets.py --only-missing   # только недостающие
+```
+
 ## 1. `icon.png`
 
 Любой PNG 512×512. Палитра приложения:

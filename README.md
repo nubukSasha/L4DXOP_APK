@@ -106,7 +106,13 @@ git push origin v1.0
 | `assets/presplash.jpg` | **да** | портретный **JPEG** (не PNG!) |
 | `assets/fonts/JetBrainsMono-Regular.ttf` | нет | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases); без него будет `RobotoMono` |
 
-Создать всё одной командой (нужен Pillow):
+**Локально ничего делать не нужно.** GitHub Actions сам вызывает
+`python tools/make_assets.py --only-missing` перед сборкой, а следующим шагом
+проверяет, что `presplash.jpg` — настоящий JPEG. Файлы, которые уже есть в
+репозитории, не перезаписываются, так что свой `icon.png` вы можете просто
+закоммитить.
+
+Хотите посмотреть результат локально (нужен Pillow):
 
 ```bash
 pip install pillow
@@ -114,8 +120,10 @@ python tools/make_assets.py
 ```
 
 > **Почему presplash именно JPEG.** python-for-android копирует его как есть в
-> `res/drawable/presplash.jpg` **без конвертации**. PNG под именем `.jpg` Android не
-> декодирует (`codec->getAndroidPixels() failed`), `setContentView` падает прямо в
+> `res/drawable/presplash.jpg` **без конвертации**, и делает это на самом
+> последнем шаге упаковки (`dists/*/build.py:389`) — спустя ~15 минут сборки.
+> PNG под именем `.jpg` Android не декодирует
+> (`codec->getAndroidPixels() failed`), `setContentView` падает прямо в
 > `onCreate`, и приложение показывает белый экран. Подробно — в
 > [`assets/README.md`](assets/README.md).
 
@@ -342,6 +350,7 @@ buildozer -v android debug
 |---|---|
 | **Сборка падает на Kivy**: `Command failed: ... toolchain create ... Error code: 1` + `implicit declaration of function '_PyUnicode_FastCopyCharacters' is invalid in C99` | p4a собрал **Python 3.14**, Kivy 2.3.x его не поддерживает (максимум 3.13). Нужна ветка p4a с Python 3.11 — в `buildozer.spec` уже стоит `android.branch = release-2024.01.21`. **Не меняйте её на `master`/`develop`.** |
 | `unrecognized arguments: --copy-libs` | buildozer новее зафиксированной ветки p4a. Уже выключено через `android.copy_libs = 0`. |
+| **Сборка падает на 15-й минуте**: `FileNotFoundError: ... /assets/presplash.jpg` в `dists/*/build.py:389` | p4a копирует presplash на самом последнем шаге упаковки, уже после компиляции всего тулчейна. Теперь workflow создаёт ресурсы сам (`Prepare assets`) и проверяет их отдельным быстрым шагом (`Verify assets`) — падать будет сразу, а не через 15 минут. |
 | **Белый экран при запуске**, в `adb logcat` есть `codec->getAndroidPixels() failed` и `Base: Leaving application in progress...` | presplash положен PNG вместо JPEG. p4a копирует его как есть в `res/drawable/presplash.jpg` — нужен настоящий JPEG. |
 | Белый экран, а в logcat ничего нет | Приложение само гасит логи. Файлы `startup.log` и `crash.log` появляются в `/sdcard/L4DXOP_LUA_TOOL/` — откройте их через MT Manager, там видно, на каком шаге запуск остановился. |
 | После смены версии Python сборка падает со странными ошибками компиляции | В кэше Actions осталось дерево CPython 3.14, p4a его не пересобирает. Запустите **Actions → Build APK → Run workflow → `full_rebuild = yes`**. |

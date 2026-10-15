@@ -101,6 +101,31 @@ jobs:
       - name: Smoke-test core (PAK / Lua / SM4)
         run: python tests/test_core.py
 
+      # ── ресурсы приложения ────────────────────────────────────────────────
+      # icon/presplash лежат в .gitignore, но p4a требует их физически.
+      # presplash копируется в res/drawable/presplash.jpg на ПОСЛЕДНЕМ шаге
+      # упаковки (dists/*/build.py:389) — то есть через ~15 минут сборки.
+      # Поэтому генерируем недостающие файлы здесь, до долгой работы.
+      - name: Prepare assets (icon / presplash)
+        run: |
+          python tools/make_assets.py --only-missing
+          ls -l assets/
+
+      # Страховка: упасть через секунду, а не через 15 минут. И заодно
+      # проверяем, что presplash — настоящий JPEG, а не переименованный PNG
+      # (именно это давало белый экран: Skia → codec->getAndroidPixels() failed).
+      - name: Verify assets
+        run: |
+          test -f assets/icon.png || { echo "::error::assets/icon.png is missing"; exit 1; }
+          test -f assets/presplash.jpg || { echo "::error::assets/presplash.jpg is missing"; exit 1; }
+          MAGIC=$(python -c "print(open('assets/presplash.jpg','rb').read(2).hex())")
+          if [ "$MAGIC" != "ffd8" ]; then
+            echo "::error::assets/presplash.jpg is not a JPEG (first bytes: $MAGIC)."
+            echo "::error::p4a copies it to res/drawable/presplash.jpg verbatim -> white screen on launch."
+            exit 1
+          fi
+          echo "assets ok: icon.png present, presplash.jpg is a real JPEG"
+
       # ВАЖНО: НЕ пишем `yes | buildozer`.
       # buildozer дорабатывает и закрывает stdin, после чего `yes` ловит
       # SIGPIPE и возвращает ненулевой код. В связке с `set -o pipefail`

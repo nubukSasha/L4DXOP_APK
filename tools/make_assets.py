@@ -8,8 +8,9 @@
 #  ни Pillow, ни ничего другого ставить не надо.
 #
 #  ИСПОЛЬЗОВАНИЕ
-#      python tools/make_assets.py            # icon.png + presplash.png + presplash.jpg
-#      python tools/make_assets.py --font X.ttf # скопировать шрифт
+#      python tools/make_assets.py                  # icon.png + presplash.png + presplash.jpg
+#      python tools/make_assets.py --only-missing   # создать только недостающие
+#      python tools/make_assets.py --font X.ttf     # скопировать шрифт
 #
 #  Требуется Pillow только для шага --font и для выгрузки presplash.jpg:
 #      pip install pillow
@@ -19,7 +20,9 @@
 #  там настоящий JPEG. С PNG внутри Skia падает с
 #  "codec->getAndroidPixels() failed", и приложение показывает белый экран.
 #
-#  Запуск НЕ обязателен — можно положить картинки вручную (assets/README.md).
+#  Локальный запуск НЕ обязателен: GitHub Actions вызывает
+#  `python tools/make_assets.py --only-missing` сам, перед сборкой.
+#  Ресурсы можно и положить вручную (assets/README.md) — скрипт их не тронет.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -242,17 +245,44 @@ def main():
         print(__doc__)
         return 0
 
+    # --only-missing: не трогать уже существующие файлы. Именно этот режим
+    # использует CI — свой нарисованный icon.png/presplash.png, если он есть
+    # в репозитории, останется нетронутым, а недостающие файлы создадутся.
+    only_missing = "--only-missing" in args
+    if only_missing:
+        args = [a for a in args if a != "--only-missing"]
+
     png_splash = os.path.join(ASSETS, "presplash.png")
     png_icon = os.path.join(ASSETS, "icon.png")
     jpg_splash = os.path.join(ASSETS, "presplash.jpg")
 
-    make_icon(png_icon)
-    make_presplash(png_splash)
-    make_jpeg(png_splash, jpg_splash)
+    if only_missing and os.path.exists(png_icon):
+        print("  = %s  уже есть, пропускаем" % png_icon)
+    else:
+        make_icon(png_icon)
+
+    if only_missing and os.path.exists(png_splash):
+        print("  = %s  уже есть, пропускаем" % png_splash)
+    else:
+        make_presplash(png_splash)
+
+    if only_missing and os.path.exists(jpg_splash):
+        print("  = %s  уже есть, пропускаем" % jpg_splash)
+    else:
+        make_jpeg(png_splash, jpg_splash)
 
     print("\nГотово. Проверьте перед сборкой:")
+    missing = []
     for f in (png_icon, png_splash, jpg_splash):
-        print("  %s  %s" % ("OK " if os.path.exists(f) else "-- ", f))
+        ok = os.path.exists(f)
+        if not ok:
+            missing.append(f)
+        print("  %s  %s" % ("OK " if ok else "-- ", f))
+
+    if missing:
+        print("\n! НЕ СОЗДАНО: %s" % ", ".join(missing))
+        print("  Для presplash.jpg нужен Pillow:  pip install pillow")
+        return 1
     return 0
 
 
