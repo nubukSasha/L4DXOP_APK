@@ -55,7 +55,19 @@ GLYPHS = {
 def write_png(path, width, height, pixel_func):
     """
     Записать PNG без сторонних библиотек.
-    pixel_func(x, y) -> (r, g, b)  либо None для прозрачности
+    pixel_func(x, y) -> (r, g, b)
+
+    ВАЖНО про формат: PNG хранит построчно, и число байт на пиксель обязано
+    совпадать с color type в IHDR. Раньше здесь стоял color type 6 (RGBA,
+    4 байта на пиксель), а пиксели писались по 3 байта — получался
+    структурно битый PNG: zlib-поток распаковывался, но общий объём данных
+    не совпадал с объявленным размером картинки. Такой файл принимает
+    только тот декодер, которому всё равно. Pillow отвергал его с
+        unrecognized data stream contents when reading image file
+    и Android/Skia отверг бы его точно так же.
+
+    Поэтому здесь color type 2 (truecolor RGB, 3 байта на пиксель) —
+    он совпадает с тем, что реально возвращает pixel_func.
     """
     raw = bytearray()
     for y in range(height):
@@ -65,21 +77,41 @@ def write_png(path, width, height, pixel_func):
             if px is None:
                 raw += b"\x00\x00\x00"
             else:
+                if len(px) != 3:
+                    raise ValueError(
+                        "pixel_func вернул %d байт(а) в (%d,%d), ожидалось 3 "
+                        "(r, g, b)" % (len(px), x, y))
                 raw += bytes(px)
+
+    # Страховка от повторения той же ошибки: сумма строк обязана совпасть
+    # с объявленными IHDR.
+    row = 1 + width * 3
+    if len(raw) != row * height:
+        raise ValueError("сформировано %d байт при ожидаемых %d"
+                         % (len(raw), row * height))
 
     def chunk(tag, data):
         out = struct.pack(">I", len(data)) + tag + data
         return out + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
 
-    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)  # 8-bit RGBA
+    #  width, height, bit depth=8, color type=2 (RGB), deflate, adaptive, no interlace
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    idat = zlib.compress(bytes(raw), 9)
+
+    # Читаем обратно тем же zlib, которым писали, — ловим рассогласование
+    # размера до того, как файл уедет в APK.
+    if len(zlib.decompress(idat)) != len(raw):
+        raise ValueError("распакованный IDAT не совпадает с исходным")
+
     png = (b"\x89PNG\r\n\x1a\n"
            + chunk(b"IHDR", header)
-           + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+           + chunk(b"IDAT", idat)
            + chunk(b"IEND", b""))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         f.write(png)
-    print("  + %s  (%dx%d, %d bytes)" % (path, width, height, len(png)))
+
+    print("  + %s  (%dx%d RGB, %d bytes)" % (path, width, height, len(png)))
 
 
 def make_icon(path, size=512):
@@ -222,6 +254,40 @@ def make_jpeg(png_path, jpg_path, quality=90):
         return True
     except Exception as e:
         print("  ! не удалось сохранить JPEG: %s" % e)
+        print("    Если речь про чтение PNG — исходный %s битый." % png_path)
+        print("    Удалите его и запустите скрипт заново.")
+        return False
+
+
+def is_valid_image(path):
+    """
+    Можно ли этот файл открыть как картинку?
+
+    True  — да
+    False — файл есть, но битый (например старый PNG, в котором число байт
+           на пиксель не совпадало с color type)
+    None  — проверить нечем: Pillow не установлен
+    """
+    if not os.path.exists(path):
+        return False
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        with Image.open(path) as im:
+            im.load()
+        return True
+    except Exception:
+        return False
+
+
+def is_jpeg(path):
+    """Проверка сигнатуры JPEG без Pillow: ff d8 в начале файла."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == b"\xff\xd8"
+    except Exception:
         return False
 
 
@@ -245,9 +311,10 @@ def main():
         print(__doc__)
         return 0
 
-    # --only-missing: не трогать уже существующие файлы. Именно этот режим
-    # использует CI — свой нарисованный icon.png/presplash.png, если он есть
-    # в репозитории, останется нетронутым, а недостающие файлы создадутся.
+    # --only-missing: не трогать то, что уже есть И читается. Используется CI.
+    # Проверка содержимого обязательна: битый файл формально «существует»,
+    # но ни Pillow, ни Android его не декодируют — и presplash снова
+    # превратится в белый экран.
     only_missing = "--only-missing" in args
     if only_missing:
         args = [a for a in args if a != "--only-missing"]
@@ -256,31 +323,43 @@ def main():
     png_icon = os.path.join(ASSETS, "icon.png")
     jpg_splash = os.path.join(ASSETS, "presplash.jpg")
 
-    if only_missing and os.path.exists(png_icon):
-        print("  = %s  уже есть, пропускаем" % png_icon)
-    else:
-        make_icon(png_icon)
+    def ensure_png(path, builder):
+        if only_missing:
+            state = is_valid_image(path)
+            if state is True:
+                print("  = %s  есть и читается, пропускаем" % path)
+                return
+            if state is False and os.path.exists(path):
+                print("  ! %s  есть, но не читается — перегенерируем" % path)
+        builder(path)
 
-    if only_missing and os.path.exists(png_splash):
-        print("  = %s  уже есть, пропускаем" % png_splash)
-    else:
-        make_presplash(png_splash)
+    def ensure_jpeg(png, jpg):
+        if only_missing and is_jpeg(jpg):
+            print("  = %s  есть и это JPEG, пропускаем" % jpg)
+            return
+        make_jpeg(png, jpg)
 
-    if only_missing and os.path.exists(jpg_splash):
-        print("  = %s  уже есть, пропускаем" % jpg_splash)
-    else:
-        make_jpeg(png_splash, jpg_splash)
+    ensure_png(png_icon, make_icon)
+    ensure_png(png_splash, make_presplash)
+    ensure_jpeg(png_splash, jpg_splash)
 
     print("\nГотово. Проверьте перед сборкой:")
-    missing = []
+    bad = []
     for f in (png_icon, png_splash, jpg_splash):
-        ok = os.path.exists(f)
-        if not ok:
-            missing.append(f)
-        print("  %s  %s" % ("OK " if ok else "-- ", f))
+        if not os.path.exists(f):
+            bad.append("%s (нет файла)" % f)
+        elif f.endswith(".jpg"):
+            if not is_jpeg(f):
+                bad.append("%s (не JPEG)" % f)
+        else:
+            state = is_valid_image(f)
+            if state is False:
+                bad.append("%s (не читается)" % f)
+        print("  %s  %s" % ("OK " if not any(b.startswith(f) for b in bad)
+                            else "!! ", f))
 
-    if missing:
-        print("\n! НЕ СОЗДАНО: %s" % ", ".join(missing))
+    if bad:
+        print("\n! ПРОБЛЕМЫ: %s" % "; ".join(bad))
         print("  Для presplash.jpg нужен Pillow:  pip install pillow")
         return 1
     return 0

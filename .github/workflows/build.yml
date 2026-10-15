@@ -111,9 +111,14 @@ jobs:
           python tools/make_assets.py --only-missing
           ls -l assets/
 
-      # Страховка: упасть через секунду, а не через 15 минут. И заодно
-      # проверяем, что presplash — настоящий JPEG, а не переименованный PNG
-      # (именно это давало белый экран: Skia → codec->getAndroidPixels() failed).
+      # Страховка: упасть через секунду, а не через 15 минут. Проверяем не
+      # только наличие, но и то, что файлы реально ДЕКОДИРУЮТСЯ.
+      #
+      # Сюда попадала битая картинка: PNG с color type 6 (RGBA, 4 байта на
+      # пиксель), в котором реально лежало по 3 байта. Pillow такое отвергает
+      # ("unrecognized data stream contents when reading image file"), и
+      # Android/Skia отверг бы точно так же — то есть белый экран.
+      # Поэтому здесь не только сигнатура, но и полное декодирование.
       - name: Verify assets
         run: |
           test -f assets/icon.png || { echo "::error::assets/icon.png is missing"; exit 1; }
@@ -124,7 +129,28 @@ jobs:
             echo "::error::p4a copies it to res/drawable/presplash.jpg verbatim -> white screen on launch."
             exit 1
           fi
-          echo "assets ok: icon.png present, presplash.jpg is a real JPEG"
+          python - <<'PY'
+          from PIL import Image
+          import sys
+          wanted = {"assets/presplash.jpg": "JPEG"}
+          ok = True
+          for path in ("assets/icon.png", "assets/presplash.png",
+                       "assets/presplash.jpg"):
+              try:
+                  with Image.open(path) as im:
+                      im.load()
+                      fmt, size = im.format, im.size
+                  print("  ok  %-26s %-5s %s" % (path, fmt, size))
+                  if wanted.get(path) and fmt != wanted[path]:
+                      print("::error::%s must be %s, got %s"
+                            % (path, wanted[path], fmt))
+                      ok = False
+              except Exception as e:
+                  print("::error::cannot decode %s: %s" % (path, e))
+                  ok = False
+          sys.exit(0 if ok else 1)
+          PY
+          echo "assets ok: all images decode cleanly"
 
       # ВАЖНО: НЕ пишем `yes | buildozer`.
       # buildozer дорабатывает и закрывает stdin, после чего `yes` ловит
