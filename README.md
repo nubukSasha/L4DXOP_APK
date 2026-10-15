@@ -341,6 +341,9 @@ buildozer -v android debug
 
 | Симптом | Причина и решение |
 |---|---|
+| **Сборка падает на Kivy**: `Command failed: ... toolchain create ... Error code: 1` + `implicit declaration of function '_PyUnicode_FastCopyCharacters' is invalid in C99` | p4a собрал **Python 3.14**, Kivy 2.3.x его не поддерживает (максимум 3.13). Нужна ветка p4a с Python 3.11 — в `buildozer.spec` уже стоит `android.branch = release-2024.01.21`. **Не меняйте её на `master`/`develop`.** |
+| `unrecognized arguments: --copy-libs` | buildozer новее зафиксированной ветки p4a. Уже выключено через `android.copy_libs = 0`. |
+| После смены версии Python сборка падает со странными ошибками компиляции | В кэше Actions осталось дерево CPython 3.14, p4a его не пересобирает. Запустите **Actions → Build APK → Run workflow → `full_rebuild = yes`**. |
 | `UI failed to load` на старте | Не установлен `kivymd==1.2.0` или `kivy==2.3.0`. Проверьте `requirements` в `buildozer.spec`. |
 | PAK не открывается, `Unsupported version: N` | Версия PAK ниже 11 — такой формат исходный инструмент тоже не читает. |
 | `Декомпиляция недоступна на этой сборке` | Нет JVM. Положите `unluac_patched.jar` и `jdk*/bin/java` в `SOURCE/`. |
@@ -350,6 +353,24 @@ buildozer -v android debug
 | `MANAGE_EXTERNAL_STORAGE` игнорируется | На Android 11+ нужен особый режим доступа к всем файлам: Настройки → Приложения → **Особый доступ** → «Доступ ко всем файлам» → включить L4DXOP. |
 | Сборка в CI падает на apt-пакетах | Старые имена (`libtinfo5`, `libncurses5-dev`) отсутствуют в Ubuntu 24.04 — workflow их ставит с `|| true`. |
 | APK не появился в Artifacts | Смотрите артефакт **build-log** — там полный вывод `buildozer`. |
+
+### Почему зафиксирована ветка p4a
+
+| | master / develop | **release-2024.01.21** |
+|---|---|---|
+| CPython в рецепте `python3` | 3.14.2 | **3.11.5** |
+| Kivy 2.3.0 | ❌ не собирается | ✅ работает |
+| `RECOMMENDED_NDK_VERSION` | 27.x | **25b** ← наш |
+| `RECOMMENDED_TARGET_API` | 35 | **33** ← наш |
+
+На `master`/`develop` в `pythonforandroid/recipes/python3/__init__.py` зашито
+`version = '3.14.2'`. Kivy 2.3.x вызывает `_PyUnicode_FastCopyCharacters` —
+внутренний API CPython, удалённый в 3.13+. p4a компилирует Python-модули с
+`-Werror=implicit-function-declaration`, поэтому это становится фатальной
+ошибкой, а не предупреждением.
+
+Более свежего стабильного Kivy (2.4) не существует — последний релиз 2.3.1,
+и он тоже заявлен только до Python 3.13. Поэтому откатываемся по p4a, а не по Kivy.
 
 ---
 

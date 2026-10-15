@@ -61,6 +61,11 @@ jobs:
           git config --global user.email "github-actions@users.noreply.github.com"
 
       # ── кэш p4a/buildozer ──────────────────────────────────────────────
+      # restore-keys УБРАН намеренно: в кэше от прошлых сборок лежит
+      # распакованное дерево CPython 3.14 внутри .buildozer/android/platform/
+      # build-arm64-v8a_armeabi-v7a/, и p4a не пересобирает его при смене
+      # версии Python. Частичное восстановление старого кэша ломало бы
+      # сборку с зафиксированной веткой release-2024.01.21 (Python 3.11.5).
       - name: Cache buildozer
         if: github.event_name != 'workflow_dispatch' || inputs.full_rebuild != 'yes'
         uses: actions/cache@v4
@@ -69,8 +74,6 @@ jobs:
             ~/.buildozer
             .buildozer
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-
 
       - name: Drop cached build state (full rebuild)
         if: github.event_name == 'workflow_dispatch' && inputs.full_rebuild == 'yes'

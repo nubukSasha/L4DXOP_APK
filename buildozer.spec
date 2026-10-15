@@ -33,8 +33,24 @@ android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 android.accept_sdk_license = True
 
+# ── ВАЖНО: фиксируем ветку python-for-android ──────────────────────────────
+# На master/develop рецепт python3 собирает CPython 3.14.2. Kivy 2.3.x
+# официально поддерживает максимум Python 3.13, а его Cython-обёртка
+# (_PyUnicode_FastCopyCharacters и др.) падает при -Werror=implicit-function-declaration:
+#   vertex_instructions.c:95623: warning: implicit declaration of function
+#   '_PyUnicode_FastCopyCharacters' is invalid in C99
+#   -> # Command failed: python -m pythonforandroid.toolchain create ... Error code: 1
+#
+# Ветка release-2024.01.21 использует CPython 3.11.5 и при этом
+# RECOMMENDED_NDK_VERSION = "25b" — ровно тот NDK, что у нас в spec.
+android.branch = release-2024.01.21
+
+# ── ВАЖНО: отключаем --copy-libs ───────────────────────────────────────────
+# Опция появилась в buildozer 1.5+, но ветка p4a release-2024.01.21
+# такого флага не знает -> "unrecognized arguments: --copy-libs".
+android.copy_libs = 0
+
 # ── Прочее ──────────────────────────────────────────────────────────────────
 android.logcat_filters = *:S python:D
 android.debug_artifact = apk
 android.release_artifact = apk
-p4a.branch = master
