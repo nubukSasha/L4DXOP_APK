@@ -1,0 +1,137 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      full_rebuild:
+        description: 'Собрать с нуля (игнорировать кэш buildozer)'
+        required: false
+        default: 'no'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── системные зависимости для сборки Android ────────────────────────
+      # Набор покрывает ubuntu-22.04 и ubuntu-24.04: часть старых пакетов
+      # (libtinfo5, libncurses5-dev) отсутствует в 24.04, поэтому ставим
+      # оба варианта и не падаем на отсутствующем.
+      - name: Install system dependencies
+        run: |
+          set -x
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            git zip unzip \
+            openjdk-17-jdk \
+            python3-pip \
+            autoconf automake libtool pkg-config \
+            cmake \
+            build-essential ccache \
+            zlib1g-dev \
+            libffi-dev libssl-dev \
+            libncurses-dev libncursesw5-dev \
+            libtinfo-dev libltdl-dev \
+            lsb-release file wget || true
+          sudo apt-get install -y libncurses5-dev libncursesw5-dev libtinfo5 || true
+          if ! command -v rustc >/dev/null 2>&1; then
+            sudo apt-get install -y rustc cargo || true
+          fi
+
+      - name: Configure Git
+        run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git config --global user.name  "github-actions"
+          git config --global user.email "github-actions@users.noreply.github.com"
+
+      # ── кэш p4a/buildozer ──────────────────────────────────────────────
+      - name: Cache buildozer
+        if: github.event_name != 'workflow_dispatch' || inputs.full_rebuild != 'yes'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Drop cached build state (full rebuild)
+        if: github.event_name == 'workflow_dispatch' && inputs.full_rebuild == 'yes'
+        run: |
+          rm -rf ~/.buildozer .buildozer
+          echo "cache dropped, building from scratch"
+
+      - name: Install buildozer
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install "cython==0.29.36"
+          python -m pip install buildozer virtualenv
+
+      - name: Show versions
+        run: |
+          python --version
+          buildozer --version
+
+      # ── проверка ядра перед долгой сборкой ──────────────────────────────
+      # Если PAK/Lua/SM4 сломались — лучше узнать за минуту, чем за 20 минут
+      # после полной сборки Android-тулчейна.
+      - name: Install core test deps
+        run: python -m pip install pycryptodome zstandard
+
+      - name: Smoke-test core (PAK / Lua / SM4)
+        run: python tests/test_core.py
+
+      # ── сборка ──────────────────────────────────────────────────────────
+      - name: Build APK
+        run: |
+          set -o pipefail
+          yes | buildozer -v android debug 2>&1 | tee build.log
+          if ! ls bin/*.apk >/dev/null 2>&1; then
+            echo "::error::APK was not produced"
+            tail -n 200 build.log
+            exit 1
+          fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: l4dxop-apk
+          path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # ── релиз при пуше тега v* ──────────────────────────────────────────
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bin/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

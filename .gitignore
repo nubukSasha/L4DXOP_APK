@@ -1,0 +1,36 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# ── сборка Android ──────────────────────────────────────────────────────────
+# Тяжёлые артефакты buildozer/python-for-android — никогда в репозиторий
+.buildozer/
+bin/
+*.apk
+*.aab
+*.ap_
+*.dex
+build.log
+.gradle/
+
+# ── ресурсы (добавляются вручную перед сборкой) ─────────────────────────────
+# См. assets/README.md
+# assets/icon.png
+# assets/presplash.png
+# assets/fonts/*.ttf
+# assets/fonts/*.otf
+
+# ── прочее ───────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+*.log

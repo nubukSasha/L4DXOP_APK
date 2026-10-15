@@ -1,0 +1,33 @@
+# L4DXOP UNLIMITED LUA TOOL — зависимости
+#
+# Для ЛОКАЛЬНОГО запуска/отладки:  pip install -r requirements.txt
+# Для сборки APK основной источник правды — buildozer.spec (requirements там).
+#
+# ВАЖНО:
+#   * gmalg НЕ нужен — ZUC-фолбэк реализован в core/crypto.py
+#   * zstandard НЕ обязателен — core/compression.py работает без него
+#   * rich больше не нужен (логи теперь идут через колбэки в LogConsole)
+
+kivy==2.3.0
+kivymd==1.2.0
+
+# Криптография PAK: AES / SHA1 / RSA-извлечение ключей
+pycryptodome>=3.19
+
+# Нужен для сборки графики приложения (иконки, presplash)
+pillow>=9.0
+
+# Доступ к сети объявлен в манифесте; сам инструмент полностью офлайн.
+# Нужен системным компонентам p4a при сборке Android-версии.
+requests>=2.28
+
+# Мост к Android API: открытие файлового менеджера с экрана SETTINGS.
+# На десктопе импортируется только внутри try/except.
+pyjnius>=1.6.1 ; sys_platform == "linux" or sys_platform == "win32"
+
+# Опционально: zstd-сжатие внутри PAK (CM_ZSTD / CM_ZSTD_DICT).
+# Без него эти блоки просто отдаются как есть.
+# zstandard>=0.21 ; python_version >= "3.8"
+
+# Только для разработки/тестов ядра:
+# pytest ; pytest-asyncio
