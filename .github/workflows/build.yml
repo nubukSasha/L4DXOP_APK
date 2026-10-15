@@ -101,16 +101,27 @@ jobs:
       - name: Smoke-test core (PAK / Lua / SM4)
         run: python tests/test_core.py
 
+      # ВАЖНО: НЕ пишем `yes | buildozer`.
+      # buildozer дорабатывает и закрывает stdin, после чего `yes` ловит
+      # SIGPIPE и возвращает ненулевой код. В связке с `set -o pipefail`
+      # это роняет шаг, хотя APK уже собран:
+      #   # Android packaging done!
+      #   # APK ...-debug.apk available in the bin directory
+      #   yes: standard output: Broken pipe
+      #   ##[error]Process completed with exit code 1
+      # Все настройки берутся из buildozer.spec — интерактивных вопросов нет.
       # ── сборка ──────────────────────────────────────────────────────────
       - name: Build APK
         run: |
           set -o pipefail
-          yes | buildozer -v android debug 2>&1 | tee build.log
+          buildozer -v android debug 2>&1 | tee build.log
           if ! ls bin/*.apk >/dev/null 2>&1; then
             echo "::error::APK was not produced"
             tail -n 200 build.log
             exit 1
           fi
+          echo "APK is ready:"
+          ls -lh bin/*.apk
 
       - name: Upload build log
         if: always()

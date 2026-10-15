@@ -43,7 +43,10 @@ android.accept_sdk_license = True
 #
 # Ветка release-2024.01.21 использует CPython 3.11.5 и при этом
 # RECOMMENDED_NDK_VERSION = "25b" — ровно тот NDK, что у нас в spec.
+# Buildozer 1.6 просит имя p4a.branch (android.branch он принимает,
+# но ругается "deprecated"). Задаём оба, чтобы работало на любой версии.
 android.branch = release-2024.01.21
+p4a.branch = release-2024.01.21
 
 # ── ВАЖНО: отключаем --copy-libs ───────────────────────────────────────────
 # Опция появилась в buildozer 1.5+, но ветка p4a release-2024.01.21
