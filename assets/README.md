@@ -6,14 +6,51 @@
 | Файл | Что это | Размер | Обязателен? |
 |---|---|---|---|
 | `icon.png` | Иконка приложения | 512×512, PNG, квадрат | **ДА** — без неё сборка падает |
-| `presplash.png` | Экран загрузки | 1080×1920 (портрет), PNG | **ДА** — без неё сборка падает |
+| `presplash.jpg` | Экран загрузки | портрет, **JPEG** | **ДА** — без него белый экран |
+| `presplash.png` | тот же экран в PNG | 1080×1920 | нет (источник для JPEG) |
 | `fonts/JetBrainsMono-Regular.ttf` | моноширинный шрифт | любой размер | нет — приложение откатится на встроенный `RobotoMono` |
 
 ---
 
+## ⚠️ Почему presplash ОБЯЗАН быть JPEG
+
+python-for-android копирует файл пресплаша **как есть** в
+`res/drawable/presplash.jpg` — без конвертации
+(`bootstraps/common/build/build.py:390`). Имя всегда `.jpg`, независимо от
+того, что лежит по исходному пути.
+
+Если положить туда PNG, Android падает при старте:
+
+```
+D skia   : --- codec->getAndroidPixels() failed.
+W System.err: ... at Activity.setContentView
+              at org.kivy.android.PythonActivity.showLoadingScreen
+```
+
+`setContentView` бросает исключение прямо в `onCreate`, activity остаётся в
+сломанном состоянии, SDL отдаёт QUIT, и Kivy выходит из главного цикла, не
+нарисовав ни одного кадра:
+
+```
+[INFO] Base: Start application main loop
+[INFO] Base: Leaving application in progress...
+```
+
+Итог — белый экран. Собственный дефолт p4a — настоящий `kivy-presplash.jpg`.
+
+## Как создать всё сразу
+
+```bash
+pip install pillow
+python tools/make_assets.py
+```
+
+Скрипт создаст `icon.png`, `presplash.png` и **настоящий `presplash.jpg`**
+(через Pillow, с проверкой сигнатуры `ff d8`).
+
 ## 1. `icon.png`
 
-Положите любой PNG 512×512. Если рисуете сами — используйте палитру приложения:
+Любой PNG 512×512. Палитра приложения:
 
 ```
 фон      #0A0E1A
@@ -26,13 +63,11 @@
 * сконвертировать `presplash.png` в квадрат;
 * сделать «заглушку» — например, в онлайн-конвертере изображений.
 
-## 2. `presplash.png`
+## 2. `presplash.jpg`
 
-Портретный PNG 1080×1920. Тот же фон `#0A0E1A`, по центру — логотип
+Портретный **JPEG** с тем же фоном `#0A0E1A`, по центру — логотип
 `▓▓▓ L4DXOP ▓▓▓` и подпись `@L4DXOP`.
-
-Buildozer умеет делать превью сам (`presplash.filename` можно указать на
-`presplash.png`, а не на gif), но файл всё равно должен существовать.
+Если рисуете вручную — просто сохраните как `.jpg`, не `.png`.
 
 ## 3. `fonts/JetBrainsMono-Regular.ttf`
 
@@ -57,14 +92,20 @@ assets/fonts/JetBrainsMono-Regular.ttf
 ## Проверка перед сборкой
 
 ```bash
-ls -la assets/icon.png assets/presplash.png assets/fonts/
+ls -la assets/icon.png assets/presplash.jpg assets/fonts/
+```
+
+Проверить, что это настоящий JPEG (должно быть `ffd8`):
+
+```bash
+python -c "print(open('assets/presplash.jpg','rb').read(2).hex())"
 ```
 
 `buildozer.spec` ссылается на файлы так:
 
 ```
-icon.filename     = %(source.dir)s/assets/icon.png
-presplash.filename = %(source.dir)s/assets/presplash.png
+icon.filename      = %(source.dir)s/assets/icon.png
+presplash.filename = %(source.dir)s/assets/presplash.jpg
 ```
 
 Если файлов нет, `buildozer android debug` остановится с ошибкой
@@ -74,6 +115,6 @@ presplash.filename = %(source.dir)s/assets/presplash.png
 
 ## Почему файлы не в репозитории
 
-Бинарники (png/ttf) в git-репозитории без нужды только раздувают историю,
+Бинарники (png/jpg/ttf) в git-репозитории без нужды только раздувают историю,
 а `ttf` ещё и весит под мегабайт. Их проще добавить один раз вручную
 и держать локально — `buildozer.spec` к ним идёт по относительному пути.

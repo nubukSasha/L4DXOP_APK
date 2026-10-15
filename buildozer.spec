@@ -16,13 +16,21 @@ requirements = python3,kivy==2.3.0,kivymd==1.2.0,pycryptodome,pillow,requests,py
 
 # ── Окно ────────────────────────────────────────────────────────────────────
 orientation = portrait
-fullscreen = 0
+# Полноэкранный режим: при fullscreen = 0 поверх приложения остаётся
+# системный статус-бар, а на некоторых прошивках окно не растягивается.
+fullscreen = 1
 
 # ── Ресурсы ─────────────────────────────────────────────────────────────────
-# ВАЖНО: эти два файла нужно положить в assets/ вручную перед сборкой —
-# см. assets/README.md
+# ВАЖНО: эти файлы нужно положить в assets/ перед сборкой — см. assets/README.md
+#
+# presplash ОБЯЗАН быть JPEG, а не PNG. python-for-android копирует его как есть
+# в res/drawable/presplash.jpg (bootstraps/common/build/build.py:390), без
+# конвертации. С PNG внутри Android/Skia падает с "codec->getAndroidPixels()
+# failed", Activity.setContentView бросает исключение прямо в onCreate, и
+# приложение показывает белый экран.
+# Сгенерировать оба файла:  python tools/make_assets.py
 icon.filename = %(source.dir)s/assets/icon.png
-presplash.filename = %(source.dir)s/assets/presplash.png
+presplash.filename = %(source.dir)s/assets/presplash.jpg
 
 # ── Android ─────────────────────────────────────────────────────────────────
 android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE,INTERNET
@@ -54,6 +62,8 @@ p4a.branch = release-2024.01.21
 android.copy_libs = 0
 
 # ── Прочее ──────────────────────────────────────────────────────────────────
-android.logcat_filters = *:S python:D
+# Логи НЕ глушим: раньше было "*:S python:D", из-за этого в logcat не было
+# видно ничего, кроме тега python — невозможно было диагностировать запуск.
+android.logcat_filters = *:D
 android.debug_artifact = apk
 android.release_artifact = apk

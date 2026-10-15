@@ -102,23 +102,22 @@ git push origin v1.0
 
 | Файл | Обязателен | Как получить |
 |---|:---:|---|
-| `assets/icon.png` | **да** | 512×512 PNG, нарисовать самому или сгенерировать скриптом |
-| `assets/presplash.png` | **да** | 1080×1920 PNG, тот же фон |
-| `assets/fonts/JetBrainsMono-Regular.ttf` | нет | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases) — без него будет `RobotoMono` |
+| `assets/icon.png` | **да** | 512×512 PNG |
+| `assets/presplash.jpg` | **да** | портретный **JPEG** (не PNG!) |
+| `assets/fonts/JetBrainsMono-Regular.ttf` | нет | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases); без него будет `RobotoMono` |
 
-Быстрый способ сгенерировать картинки (чистый Python, без Pillow):
+Создать всё одной командой (нужен Pillow):
 
 ```bash
-cd L4DXOP_APK
+pip install pillow
 python tools/make_assets.py
 ```
 
-Скрипт создаст `assets/icon.png` и `assets/presplash.png` в фирменной палитре.
-Шрифт кладётся вручную либо так:
-
-```bash
-python tools/make_assets.py --font /путь/к/JetBrainsMono-Regular.ttf
-```
+> **Почему presplash именно JPEG.** python-for-android копирует его как есть в
+> `res/drawable/presplash.jpg` **без конвертации**. PNG под именем `.jpg` Android не
+> декодирует (`codec->getAndroidPixels() failed`), `setContentView` падает прямо в
+> `onCreate`, и приложение показывает белый экран. Подробно — в
+> [`assets/README.md`](assets/README.md).
 
 Подробности — в [`assets/README.md`](assets/README.md).
 
@@ -343,6 +342,8 @@ buildozer -v android debug
 |---|---|
 | **Сборка падает на Kivy**: `Command failed: ... toolchain create ... Error code: 1` + `implicit declaration of function '_PyUnicode_FastCopyCharacters' is invalid in C99` | p4a собрал **Python 3.14**, Kivy 2.3.x его не поддерживает (максимум 3.13). Нужна ветка p4a с Python 3.11 — в `buildozer.spec` уже стоит `android.branch = release-2024.01.21`. **Не меняйте её на `master`/`develop`.** |
 | `unrecognized arguments: --copy-libs` | buildozer новее зафиксированной ветки p4a. Уже выключено через `android.copy_libs = 0`. |
+| **Белый экран при запуске**, в `adb logcat` есть `codec->getAndroidPixels() failed` и `Base: Leaving application in progress...` | presplash положен PNG вместо JPEG. p4a копирует его как есть в `res/drawable/presplash.jpg` — нужен настоящий JPEG. |
+| Белый экран, а в logcat ничего нет | Приложение само гасит логи. Файлы `startup.log` и `crash.log` появляются в `/sdcard/L4DXOP_LUA_TOOL/` — откройте их через MT Manager, там видно, на каком шаге запуск остановился. |
 | После смены версии Python сборка падает со странными ошибками компиляции | В кэше Actions осталось дерево CPython 3.14, p4a его не пересобирает. Запустите **Actions → Build APK → Run workflow → `full_rebuild = yes`**. |
 | `UI failed to load` на старте | Не установлен `kivymd==1.2.0` или `kivy==2.3.0`. Проверьте `requirements` в `buildozer.spec`. |
 | PAK не открывается, `Unsupported version: N` | Версия PAK ниже 11 — такой формат исходный инструмент тоже не читает. |

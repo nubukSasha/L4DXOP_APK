@@ -206,18 +206,21 @@ def menu_item(n, name, desc):
 # ══════════════════════════════════════════════════════════════════════════════
 def apply_theme(app=None):
     """
-    Включить тёмную тему KivyMD и поставить фон/цвета.
-    Любая ошибка (другая версия KivyMD) молча игнорируется —
-    каждый виджет всё равно получает цвета напрямую из Theme.
+    Включить тёмную тему KivyMD.
+
+    ВАЖНО: здесь намеренно НЕ делается `ThemeManager().app = app`.
+    Ручная подстановка app ломает штатную последовательность инициализации
+    KivyMD: тема поднимается, а её обработчики — нет.
+
+    Каждый наш виджет и так получает цвета напрямую из Theme, поэтому даже
+    полный отказ темы не влияет на вид приложения.
     """
     ok = False
     try:
         from kivymd.theming import ThemeManager
-        from kivymd.material_resources import style
         tm = ThemeManager()
-        if app is not None:
-            tm.app = app
         try:
+            from kivymd.material_resources import style
             tm.theme_cls = style.get_theme_style("Dark")
         except Exception:
             pass

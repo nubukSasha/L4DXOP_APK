@@ -8,10 +8,18 @@
 #  ни Pillow, ни ничего другого ставить не надо.
 #
 #  ИСПОЛЬЗОВАНИЕ
-#      python tools/make_assets.py            # создать icon.png + presplash.png
+#      python tools/make_assets.py            # icon.png + presplash.png + presplash.jpg
 #      python tools/make_assets.py --font X.ttf # скопировать шрифт
 #
-#  Запуск НЕ обязателен — можно нарисовать файлы вручную (assets/README.md).
+#  Требуется Pillow только для шага --font и для выгрузки presplash.jpg:
+#      pip install pillow
+#
+#  ВАЖНО: presplash.jpg (а не .png) — потому что python-for-android копирует
+#  файл пресплаша как есть в res/drawable/presplash.jpg, и Android ожидает
+#  там настоящий JPEG. С PNG внутри Skia падает с
+#  "codec->getAndroidPixels() failed", и приложение показывает белый экран.
+#
+#  Запуск НЕ обязателен — можно положить картинки вручную (assets/README.md).
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -176,6 +184,44 @@ def copy_font(src):
     return dst
 
 
+def make_jpeg(png_path, jpg_path, quality=90):
+    """
+    Конвертировать PNG в НАСТОЯЩИЙ JPEG.
+
+    Зачем это нужно:
+      python-for-android копирует presplash как есть в res/drawable/presplash.jpg
+      (bootstraps/common/build/build.py:390) — БЕЗ конвертации.
+      Если положить туда PNG, Android/Skia падает с
+          codec->getAndroidPixels() failed
+      и Activity.setContentView бросает исключение прямо в onCreate.
+      Собственный дефолт p4a — настоящий kivy-presplash.jpg,
+      поэтому presplash обязан быть JPEG.
+
+    Требуется Pillow:  pip install pillow
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  ! Pillow не установлен — presplash.jpg не создан.")
+        print("    Установите:  pip install pillow")
+        return False
+    try:
+        with Image.open(png_path) as im:
+            im.convert("RGB").save(jpg_path, "JPEG", quality=quality,
+                                   optimize=True)
+        size = os.path.getsize(jpg_path)
+        with open(jpg_path, "rb") as f:
+            magic = f.read(2).hex()
+        if magic != "ffd8":
+            print("  ! итоговый файл не похож на JPEG (magic=%s)" % magic)
+            return False
+        print("  + %s  (%d bytes, JPEG ok)" % (jpg_path, size))
+        return True
+    except Exception as e:
+        print("  ! не удалось сохранить JPEG: %s" % e)
+        return False
+
+
 def main():
     args = sys.argv[1:]
     print("L4DXOP · asset generator")
@@ -196,11 +242,17 @@ def main():
         print(__doc__)
         return 0
 
-    make_icon(os.path.join(ASSETS, "icon.png"))
-    make_presplash(os.path.join(ASSETS, "presplash.png"))
+    png_splash = os.path.join(ASSETS, "presplash.png")
+    png_icon = os.path.join(ASSETS, "icon.png")
+    jpg_splash = os.path.join(ASSETS, "presplash.jpg")
+
+    make_icon(png_icon)
+    make_presplash(png_splash)
+    make_jpeg(png_splash, jpg_splash)
+
     print("\nГотово. Проверьте перед сборкой:")
-    print("  ls -la %s %s" % (os.path.join(ASSETS, "icon.png"),
-                             os.path.join(ASSETS, "presplash.png")))
+    for f in (png_icon, png_splash, jpg_splash):
+        print("  %s  %s" % ("OK " if os.path.exists(f) else "-- ", f))
     return 0
 
 

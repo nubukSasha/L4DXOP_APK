@@ -64,8 +64,37 @@ MDTextField = _try_import("kivymd.uix.textfield", "MDTextField") or TextInput
 MDProgressBar = _try_import("kivymd.uix.progressbar", "MDProgressBar")
 MDBoxLayout = _try_import("kivymd.uix.boxlayout", "MDBoxLayout") or BoxLayout
 
+# ── ЖЁСТКИЕ ФОЛБЭКИ ────────────────────────────────────────────────────────
+# Ни один из этих классов не должен остаться None: раньше при неудачном
+# импорте KivyMD мы получали `MDScreenManager = None`, и вызов
+# MDScreenManager(transition=...) в main.build() давал
+#   TypeError: 'NoneType' object is not callable
+# то есть превращал тихую проблему импорта в жёсткий краш и белый экран.
+from kivy.app import App as _KivyApp            # noqa: E402
+from kivy.uix.screenmanager import (            # noqa: E402
+    Screen as _KivyScreen,
+    ScreenManager as _KivyScreenManager,
+)
+
+if MDApp is object:
+    MDApp = _KivyApp
 if MDScreen is None:
-    from kivy.uix.screenmanager import Screen as MDScreen  # noqa: F811
+    MDScreen = _KivyScreen
+if MDScreenManager is None:
+    MDScreenManager = _KivyScreenManager
+
+#: Что именно не удалось импортировать — показываем на экране диагностики
+KIVYMD_IMPORT_ERRORS = []
+for _mod, _names in (("kivymd.app", ("MDApp",)),
+                     ("kivymd.uix.screenmanager", ("MDScreen", "MDScreenManager")),
+                     ("kivymd.uix.button", ("MDRaisedButton",)),
+                     ("kivymd.uix.textfield", ("MDTextField",)),
+                     ("kivymd.uix.progressbar", ("MDProgressBar",))):
+    for _n in _names:
+        try:
+            __import__(_mod, fromlist=[_n])
+        except Exception as _e:
+            KIVYMD_IMPORT_ERRORS.append("%s.%s: %s" % (_mod, _n, _e))
 
 if MDProgressBar is None:
     class MDProgressBar(Widget):
